@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -5,8 +7,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-guide = pd.read_csv("office_price_guide.csv")
-pur = pd.read_csv("purchases.csv")
+DATA_DIR = Path(__file__).resolve().parent.parent
+
+guide = pd.read_csv(DATA_DIR / "office_price_guide.csv")
+pur = pd.read_csv(DATA_DIR / "purchases.csv")
 
 df = pur.merge(guide, on="Product", how="left", validate="many_to_one")
 df["unit_price"] = (df["Total_paid_eur"] / df["Quantity"]).round(6)
@@ -41,5 +45,5 @@ ax.tick_params(which="minor", length=0)
 ax.set_xlabel("Pilot number")
 ax.set_title("Christmas board: fair-priced souvenirs per pilot")
 fig.tight_layout()
-fig.savefig("board.png", dpi=160)
+fig.savefig(Path(__file__).resolve().parent / "board.png", dpi=160)
 print("saved board.png")
