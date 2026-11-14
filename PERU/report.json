@@ -1,0 +1,62 @@
+{
+  "flag": "SIGMOID_PROVENANCE",
+  "tensor_shapes": {
+    "classifier.bias": [
+      3
+    ],
+    "classifier.weight": [
+      3,
+      32
+    ],
+    "embedding.weight": [
+      256,
+      32
+    ]
+  },
+  "payload": {
+    "tensor": "embedding.weight",
+    "row": 128,
+    "column_start": 0,
+    "length": 18,
+    "decode_scale": 1024.0,
+    "decode_offset": 128.0,
+    "file_byte_offset": 17012,
+    "file_byte_length": 72,
+    "literal_flag_present": false
+  },
+  "audit": {
+    "architecture": "mean byte embeddings, then linear classifier",
+    "class_index_mapping": [
+      "antisuyu",
+      "chinchaysuyu",
+      "qullasuyu"
+    ],
+    "records": 2400,
+    "correct": 2290,
+    "accuracy": 0.9541666666666667,
+    "confusion_matrix_true_rows_predicted_columns": [
+      [
+        762,
+        17,
+        21
+      ],
+      [
+        24,
+        758,
+        18
+      ],
+      [
+        18,
+        12,
+        770
+      ]
+    ],
+    "all_ascii_embeddings_unchanged_after_erasure": true,
+    "corpus_max_logit_change_after_erasure": 0.0,
+    "corpus_predictions_unchanged_after_erasure": true
+  },
+  "input_sha256": {
+    "model.safetensors": "8e5710a90f735d0331555d99da515703924a1db05afa11dfc8a61a7ab96696e4",
+    "corpus.csv": "4b01efd4aacce26d14b1f9f8c4d8d1fd9a6b76b1f57c3fbf35ce06d2283cfb6d"
+  }
+}
