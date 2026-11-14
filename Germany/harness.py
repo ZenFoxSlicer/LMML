@@ -1,8 +1,17 @@
-# GERMANY PRACTICE TOOL: run a submission and enforce the rules.
-# This file is not part of the main.py upload.
-# The parent process owns the sensor function. A separate child process runs solve().
-# They send requests and answers through text pipes, like a private message channel.
-# The parent counts queries and can stop the child when it breaks a limit.
+# GERMANY'S LAB TECHNICIAN: run the experiment and enforce its limits.
+# Imagine main.py is our investigator and this file is the technician holding the box.
+# Our investigator sends five knob settings; the technician sends back the reading.
+# The technician counts readings and stops anyone who exceeds the time or query limit.
+#
+# The parent process holds the real box function. A child process runs our main.py.
+# They communicate through pipes: private text channels carrying JSON messages.
+# The child never receives the box's formula.
+#
+# Reading guide:
+# - Oracle: the object our code uses to request readings and remember old answers.
+# - run(): the technician starts the experiment and checks its rules.
+# - _child(): loads our file and calls solve(oracle, points).
+# This is a local testing tool. Upload only main.py.
 
 """
 LMML "Recover the Black Box" — query harness.

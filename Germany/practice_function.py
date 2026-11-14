@@ -1,7 +1,16 @@
-# GERMANY PRACTICE TOOL: the known sensor used for local testing.
-# This is not the hidden graded function and is not part of the upload.
-# The solver must learn from oracle answers, not import these known coefficients.
-# TRUTH describes the correct structure; f() calculates a reading.
+# GERMANY'S TRAINING BOX: a box we are allowed to open for practice.
+# This file contains its known rules so we can check whether our investigator works.
+# The real exam uses a different box. Our main.py does not import this file.
+#
+# Read f() below to see the training box's behaviour:
+# - Start with 2 on the screen.
+# - Add the separate changes caused by knobs 1, 3, and 5.
+# - Add a shared effect from knobs 3 and 5.
+# - Add 1.5 when knobs 1 and 4 together reach the switch limit.
+# - Knob 2 does nothing in this training box.
+#
+# TRUTH is the examiner's answer sheet. evaluate() returns a rounded screen reading.
+# Upload only main.py, not this known training formula.
 
 """
 Practice black box for "Recover the Black Box" — PUBLIC.
@@ -48,8 +57,8 @@ def f(x: Sequence[float]) -> float:
     x1, _x2, x3, x4, x5 = x
     # Start at 2.0, then add the separate effects of x1, x3, and x5.
     y = 2.0 + 1.5 * x1 + 0.4 * x3 - 0.6 * x5
-    # Add the shared effect of x3 and x5. It is zero if either dial is at 0.5.
-    # That is why changing one dial at a time around the middle misses this effect.
+    # These two knobs work together. If either is at 0.5, the product is zero.
+    # Like testing a brightness dial with the lamp off, a middle-only test hides it.
     y += -4.0 * (x3 - 0.5) * (x5 - 0.5)
     # Once x1 + x4 reaches 1.7, add 1.5 all at once: this is the jump.
     if (x1 + x4) >= 1.7:

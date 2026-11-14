@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-# GERMANY PRACTICE TOOL: score a solution after the harness runs it.
-# This file is for local testing, not for upload with main.py.
-# Example: python3 evaluation_script.py main.py --eval-type train
+# GERMANY'S EXAMINER: decide how well we understood the box.
+# The harness acts as the technician. This file marks the investigator's answer.
+# It checks which knobs matter, which work together, when the switch turns on,
+# and whether our predicted screen readings are right.
 #
-# The score has four parts: variables (20), interaction (20), jump (30),
-# and predictions (30). The harness separately enforces time and query limits.
-# Practice mode reports results but never releases a flag.
-# Start at main() near the bottom to follow the program's overall flow.
+# Points: knob roles 20, shared effect 20, switch rule 30, predictions 30.
+# The explanation is worth 70 points because guessing numbers alone is not enough.
+#
+# Start at main() at the bottom: choose the practice box, run our code through
+# the technician, then call the score functions and print a report.
+# To practise: python3 evaluation_script.py main.py --eval-type train
+# Practice mode does not release a flag. This file is not part of the upload.
 
 """
 LMML "Recover the Black Box" — evaluator.
