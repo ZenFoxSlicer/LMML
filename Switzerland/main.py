@@ -15,7 +15,7 @@ from sklearn.tree import DecisionTreeClassifier  # the decision tree model we fi
 
 TARGET = "slab_released"  # name of the label column (1 = avalanche slab released, 0 = not)
 
-df = pd.read_csv("train-input.csv")  # load the snowpack measurements
+df = pd.read_csv("test-input.csv")  # load the snowpack measurements
 # Separate what we know (X: measurements) from what we want to predict (y).
 # Do not leave the answer column among the inputs: that would give the answer away.
 X = df.drop(columns=[TARGET])  # features: every column except the label
@@ -47,5 +47,5 @@ def walk(node):  # recursive preorder traversal starting at a given node id
 walk(0)  # start at the root, node 0
 word = "".join(letters)  # glue the letters into the hidden word
 
-with open("train-output.txt", "w") as f:  # open the output file for writing (overwrites it)
+with open("test-output.txt", "w") as f:  # open the output file for writing (overwrites it)
     f.write(f"SIGMOID_{word}\n")  # write the answer in the expected SIGMOID_<WORD> format
