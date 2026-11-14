@@ -1,3 +1,8 @@
+# GERMANY PRACTICE TOOL: the known sensor used for local testing.
+# This is not the hidden graded function and is not part of the upload.
+# The solver must learn from oracle answers, not import these known coefficients.
+# TRUTH describes the correct structure; f() calculates a reading.
+
 """
 Practice black box for "Recover the Black Box" — PUBLIC.
 
@@ -12,6 +17,7 @@ from typing import Dict, List, Sequence
 
 VAR_NAMES: List[str] = ["x1", "x2", "x3", "x4", "x5"]
 
+# The evaluator uses this dictionary to check the solver's structural claims.
 TRUTH: Dict[str, object] = {
     "intercept": 2.0,
     "linear": {"x1": 1.5, "x2": 0.0, "x3": 0.4, "x4": 0.0, "x5": -0.6},
@@ -32,23 +38,31 @@ TRUTH: Dict[str, object] = {
 }
 
 
+# Tell the evaluator whether a point lies on the side with the extra jump.
 def gate_active(x: Sequence[float]) -> bool:
     return (x[0] + x[3]) >= 1.7
 
 
 def f(x: Sequence[float]) -> float:
+    # Unpack the five dial settings. _x2 is unused: that dial is decorative here.
     x1, _x2, x3, x4, x5 = x
+    # Start at 2.0, then add the separate effects of x1, x3, and x5.
     y = 2.0 + 1.5 * x1 + 0.4 * x3 - 0.6 * x5
+    # Add the shared effect of x3 and x5. It is zero if either dial is at 0.5.
+    # That is why changing one dial at a time around the middle misses this effect.
     y += -4.0 * (x3 - 0.5) * (x5 - 0.5)
+    # Once x1 + x4 reaches 1.7, add 1.5 all at once: this is the jump.
     if (x1 + x4) >= 1.7:
         y += 1.5
     return y
 
 
+# Round readings to six decimal places, matching what the oracle reveals.
 def evaluate(x: Sequence[float]) -> float:
     return round(f(x), 6)
 
 
+# Return the same practice formula as text for the evaluation report.
 def expression() -> str:
     return ("2.0 + 1.5*x1 + 0.4*x3 - 0.6*x5 - 4.0*(x3-0.5)*(x5-0.5) "
             "+ (1.5 if x1 + x4 >= 1.7 else 0.0)")

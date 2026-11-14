@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# GERMANY PRACTICE TOOL: score a solution after the harness runs it.
+# This file is for local testing, not for upload with main.py.
+# Example: python3 evaluation_script.py main.py --eval-type train
+#
+# The score has four parts: variables (20), interaction (20), jump (30),
+# and predictions (30). The harness separately enforces time and query limits.
+# Practice mode reports results but never releases a flag.
+# Start at main() near the bottom to follow the program's overall flow.
+
 """
 LMML "Recover the Black Box" — evaluator.
 
@@ -34,6 +43,7 @@ import sys
 
 from harness import BUDGET, TIMEOUT, run
 
+# Find the practice data relative to this file, not the terminal's current folder.
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CHALLENGE = os.path.join(ROOT, "challenge", "challenge_set.json")
 TRUTH_FILES = {"train": os.path.join(ROOT, "practice_function.py"),
@@ -43,6 +53,7 @@ PASS_SCORE = 70.0
 
 HF = None   # the black box being scored against, loaded in main()
 
+# These are the scoring tolerances: how much prediction or coefficient error is allowed.
 GOOD_RMSE, BAD_RMSE = 0.01, 2.0
 COEF_TOL = 0.15          # relative tolerance on coefficients
 JUMP_TOL = 0.15
@@ -55,10 +66,14 @@ BOUNDARY_BAND = 0.005
 
 
 # ----------------------------------------------------------------------
+# Measure prediction error: square each error, average them, then take the square root.
+# RMSE is in the same units as the sensor output. Smaller is better.
 def rmse(pred, true):
     return math.sqrt(sum((p - t) ** 2 for p, t in zip(pred, true)) / len(true))
 
 
+# Turn an error value into points. Very small error gets full points;
+# very large error gets none. The middle range uses a logarithmic scale.
 def rmse_points(rms, weight):
     if rms != rms or rms == float("inf"):
         return 0.0
@@ -70,10 +85,13 @@ def rmse_points(rms, weight):
     return weight * (math.log10(BAD_RMSE) - math.log10(rms)) / span
 
 
+# Represent the active side as coefficients @ inputs >= threshold.
+# Scale the coefficient vector to length 1 so equivalent equations compare fairly.
 def normalise_halfspace(coefs, threshold, active_when="greater_equal"):
     """Return (unit normal over x1..x5, offset) for the region c.x >= t."""
     vec = [float(coefs.get(v, 0.0)) for v in HF.VAR_NAMES]
     t = float(threshold)
+    # A <= condition becomes a >= condition if we negate both sides.
     if str(active_when).lower() in ("less_equal", "less", "<=", "<", "below"):
         vec = [-c for c in vec]
         t = -t
@@ -83,11 +101,14 @@ def normalise_halfspace(coefs, threshold, active_when="greater_equal"):
     return [c / norm for c in vec], t / norm
 
 
+# Put the known correct boundary into the same standard form.
 def truth_halfspace():
     d = HF.TRUTH["discontinuity"]
     return normalise_halfspace(d["boundary"], d["threshold"])
 
 
+# If no prediction list was supplied, calculate predictions from the formula text.
+# Only a small set of names is provided, but eval is not a security sandbox.
 def eval_expression(expr, point):
     env = {"__builtins__": {}, "abs": abs, "min": min, "max": max,
            "math": math, "exp": math.exp, "log": math.log, "sqrt": math.sqrt}
@@ -96,6 +117,8 @@ def eval_expression(expr, point):
 
 
 # ----------------------------------------------------------------------
+# Award four points per dial for correctly saying whether it matters.
+# A dial must be listed as either relevant or irrelevant, not both.
 def score_variables(sub, result):
     claimed_rel = set(sub.get("relevant_variables") or [])
     claimed_irr = set(sub.get("irrelevant_variables") or [])
@@ -119,12 +142,15 @@ def score_variables(sub, result):
     return pts
 
 
+# Check the reported pair of interacting dials, then its coefficient.
+# Reporting extra incorrect interactions loses points.
 def score_interaction(sub, result):
     truth = HF.TRUTH["interaction"]
     tvars = set(truth["variables"])
     pts, detail = 0.0, []
     match = None
     for entry in sub.get("interactions") or []:
+        # Use sets so listing x1, x3 means the same pair as listing x3, x1.
         if set(entry.get("variables") or []) == tvars:
             match = entry
             break
@@ -162,6 +188,8 @@ def score_interaction(sub, result):
     return pts
 
 
+# Check whether a jump was found, which dials control it,
+# where its boundary lies, and how large the jump is.
 def score_discontinuity(sub, result):
     truth = HF.TRUTH["discontinuity"]
     tvars = set(truth["gate_variables"])
@@ -198,6 +226,8 @@ def score_discontinuity(sub, result):
         if n is None:
             detail.append("degenerate boundary (+0/7)")
         else:
+            # Compare boundary directions and positions separately.
+            # cos near 1 means the directions agree; doff near 0 means the positions agree.
             cos = sum(a * c for a, c in zip(n, tn))
             doff = abs(off - toff)
             if cos >= COS_STRICT and doff <= OFF_STRICT:
@@ -232,6 +262,7 @@ def score_discontinuity(sub, result):
     return pts
 
 
+# Compare submitted predictions with readings from the true function.
 def score_predictions(sub, result, points, allow_expr=True):
     truth_y = [HF.evaluate(p) for p in points]
     detail = []
@@ -262,17 +293,22 @@ def score_predictions(sub, result, points, allow_expr=True):
     d = HF.TRUTH["discontinuity"]
     tvec, tthr = d["boundary"], d["threshold"]
 
+    # Calculate the shortest distance from an input point to the switching plane.
     def dist_to_boundary(p):
         s = sum(tvec[v] * p[i] for i, v in enumerate(HF.VAR_NAMES))
         n = math.sqrt(sum(c * c for c in tvec.values()))
         return abs(s - tthr) / n
 
+    # Exclude points extremely close to the jump when calculating the scored errors.
+    # A tiny boundary-location error can change which side those points fall on.
     keep = [k for k, p in enumerate(points) if dist_to_boundary(p) >= BOUNDARY_BAND]
     dropped = len(points) - len(keep)
     raw = rmse(preds, truth_y)
     overall = rmse([preds[k] for k in keep], [truth_y[k] for k in keep])
     idx = [k for k in keep if HF.gate_active(points[k])]
     region = rmse([preds[k] for k in idx], [truth_y[k] for k in idx]) if idx else 0.0
+    # Give up to 20 points for all retained predictions, plus up to 10
+    # for predictions specifically on the active side of the jump.
     p_all = rmse_points(overall, 20.0)
     p_reg = rmse_points(region, 10.0)
     detail.append(f"source: {source}")
@@ -297,6 +333,7 @@ def score_predictions(sub, result, points, allow_expr=True):
 
 
 # ----------------------------------------------------------------------
+# Combine the four scores. A failed harness run receives zero immediately.
 def evaluate(out, team, points, allow_expr=True):
     """Score one harness run (see harness.run)."""
     sub = out["submission"]
@@ -319,6 +356,7 @@ def evaluate(out, team, points, allow_expr=True):
     return result
 
 
+# Turn the numeric results into a readable report with a per-check explanation.
 def render(result, reveal):
     L = []
     L.append(f"# Evaluation — `{result['team']}`")
@@ -351,6 +389,7 @@ def render(result, reveal):
         for d in b.get("detail", []):
             L.append(f"- {d}")
         L.append("")
+    # Show the real formula only when the selected reporting mode allows it.
     if reveal:
         L.append("## ground truth")
         L.append(f"```\nf(x) = {HF.expression()}\n```")
@@ -359,6 +398,7 @@ def render(result, reveal):
     return "\n".join(L)
 
 
+# Read command-line options, choose the sensor, run each submission, and print scores.
 def main():
     global HF
     ap = argparse.ArgumentParser(description=__doc__,
@@ -378,8 +418,10 @@ def main():
                     help="write DIR/<team>/submission.json + query_log.jsonl")
     ap.add_argument("--json", action="store_true", help="emit JSON not markdown")
     ap.add_argument("--out", help="also write the report here")
+    # The options above control practice/test mode, time limit, and saved reports.
     args = ap.parse_args()
 
+    # Practice mode loads the public function. Test mode needs the organiser's hidden file.
     path = TRUTH_FILES[args.eval_type]
     if not os.path.exists(path):
         print(f"organiser error: {path} not found", file=sys.stderr)
@@ -387,6 +429,7 @@ def main():
     spec = importlib.util.spec_from_file_location("black_box", path)
     HF = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(HF)
+    # Load the 300 input points whose outputs the solver must predict.
     with open(CHALLENGE) as fh:
         points = json.load(fh)["points"]
     # Test-run detail ("coefficient +5.2 vs true ...") would leak the hidden
@@ -394,11 +437,14 @@ def main():
     reveal = args.eval_type == "train" or args.reveal
 
     results = []
+    # A single command can evaluate one or more submitted scripts.
     for script in args.scripts:
         stem = os.path.splitext(os.path.basename(script))[0]
         team = (os.path.basename(os.path.dirname(os.path.abspath(script)))
                 if stem == "main" else stem)
+        # Use the harness so the submission cannot skip query counting or the time limit.
         out = run(script, HF.evaluate, points, BUDGET, args.timeout)
+        # Optionally save the returned answer and every query for later inspection.
         if args.save:
             d = os.path.join(args.save, team)
             os.makedirs(d, exist_ok=True)
@@ -408,6 +454,7 @@ def main():
                 fh.writelines(json.dumps(q) + "\n" for q in out["queries"])
         r = evaluate(out, team, points, not args.no_expr)
         r["passed"] = r["score"] >= PASS_SCORE
+        # Only a passing test-mode run adds a released flag to its report.
         if r["passed"] and args.eval_type == "test":
             r["flag"] = FLAG
         if not reveal:
@@ -415,6 +462,7 @@ def main():
                 b.pop("detail", None)
         results.append(r)
 
+    # Order submissions by score, then print either JSON or the readable report.
     results.sort(key=lambda r: -r["score"])
     if args.json:
         text = json.dumps(results if len(results) > 1 else results[0], indent=2)
@@ -434,6 +482,7 @@ def main():
     if args.out:
         with open(args.out, "w") as fh:
             fh.write(text + "\n")
+    # Exit code 0 means every submitted script passed. Code 1 means at least one did not.
     sys.exit(0 if all(r["passed"] for r in results) else 1)
 
 
