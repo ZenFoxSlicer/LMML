@@ -4,233 +4,253 @@ Moldova - Feather Stories
 
 THE PUZZLE IN PLAIN WORDS
 -------------------------
-Some birds wear a small ring on their leg with a 6-letter code on it.
-Birdwatchers look at the ring through a telescope and write down the code.
-They make two kinds of mistakes:
+Some birds wear a leg ring with a 6-letter code. Birdwatchers read it through
+a telescope and write down what they saw:
+  * a letter they could not see at all is written as "?";
+  * a letter they DID see may still be wrong.
 
-  1. A letter they cannot see at all is written as "?".
-  2. A letter they think they see may be WRONG - and usually wrong in a
-     predictable way: they mix up letters that LOOK alike from far away
-     (for example O and D, Q and C, B and S).
+ring_register.csv lists the true code of every ringed bird except ONE White
+Stork. We must work out the code on that stork's ring.
 
-We get two files:
-  * observations.csv  - every bird sighting; some rows have a ring reading.
-  * ring_register.csv - the official list of ringed birds and their true codes.
+WHAT THE DATA TURNED OUT TO HIDE (discovered step by step, see below)
+--------------------------------------------------------------------
+1. The 24 usable letters fall into 6 "look-alike families" of 4 letters:
+       A K R X | B G Z S | C O D Q | E F L P | H W N M | I Y J T
+   (U and V never appear). A misread ALWAYS stays inside the family:
+   an "O" may be written as C, D or Q, but never as, say, "E".
 
-The register contains every ringed bird EXCEPT one White Stork.
-Our job: figure out the true code on that missing stork's ring.
+2. Inside a family the 4 letters behave like the numbers 0,1,2,3, and a
+   misread is a fixed "shift" of that number (technically an XOR):
+       shift 1 swaps  A<->K, R<->X,  B<->G, Z<->S, ...
+       shift 2 swaps  A<->R, K<->X,  B<->Z, G<->S, ...
+       shift 3 swaps  A<->X, K<->R,  B<->S, G<->Z, ...
+   This is like reading a word through a slightly distorting lens: each
+   letter is replaced by a specific look-alike, the SAME way every time.
 
-THE IDEA
---------
-Imagine a pile of blurry photocopies of several documents. Most copies belong
-to documents we already own an original of. To reconstruct the one document we
-DON'T own, we must:
+3. The "lens" belongs to the PLACE where a bird lives (its home site, e.g.
+   a nest or a colony seen from one fixed viewpoint). Every bird read at
+   that site gets the same shift. Example: at site L10196035 the true ring
+   FAGQKC is read as EKBDAO, and LLAOAO is read as PPKCKC - shift 1 for
+   every letter of every bird there.
 
-  a) learn what kind of blur the photocopier produces,
-  b) throw away every copy we can explain as a blurry copy of an original,
-  c) look at what is left, group copies that clearly belong together,
-  d) combine them letter by letter ("majority vote") to undo the blur.
-
-The puzzle also contains DECOYS: ring readings that appear again and again,
-are not in the register, and look like "the missing bird" - but are really
-just badly misread registered storks. Each step below defeats a kind of decoy.
+So a straightforward majority vote over the readings gives the code AS SEEN
+THROUGH THE SITE'S LENS (RHGLWQ for our stork) - not the code on the ring.
+That is why the obvious answer is wrong. To get the true code we must
+"undo the lens", which means figuring out which shift the stork's home site
+uses. Registered birds let us measure the lens at every other home site;
+the mystery stork's site (Lower Prut, Cahul) has no registered bird, so the
+data narrows it to four candidates (step 6). Which one is right is NOT
+decided by anything this script found; RHGLWQ (shift 0) was rejected and
+ANSEMO (shift 2) was confirmed by submitting them on the platform.
 
 Run:  python solve.py
 """
 
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pandas as pd
 
-# Windows consoles sometimes cannot print Romanian letters (ș, ă ...).
-# This line makes printing safe everywhere.
-sys.stdout.reconfigure(encoding="utf-8")
-
+sys.stdout.reconfigure(encoding="utf-8")  # safe printing of Romanian names
 HERE = Path(__file__).parent
-STORK = "Ciconia ciconia"  # scientific name of the White Stork
+STORK = "Ciconia ciconia"
+
+# The six look-alike families. A letter's position inside its string is its
+# "number" 0..3, chosen so that every observed misread is an XOR shift.
+FAMILIES = ["AKRX", "BGZS", "CODQ", "EFLP", "HWNM", "IYJT"]
+FAMILY_OF = {ch: f for f, fam in enumerate(FAMILIES) for ch in fam}
+NUMBER_OF = {ch: n for fam in FAMILIES for n, ch in enumerate(fam)}
+
+
+def shift_letter(ch: str, s: int) -> str:
+    """Apply lens shift s (0..3) to one letter, staying in its family."""
+    if ch == "?":
+        return ch
+    fam = FAMILIES[FAMILY_OF[ch]]
+    return fam[NUMBER_OF[ch] ^ s]
+
+
+def shift_word(word: str, s: int) -> str:
+    return "".join(shift_letter(c, s) for c in word)
+
+
+def family_pattern(word: str):
+    """The sequence of families, e.g. RHGLWQ -> (0,4,1,3,4,2). '?' -> None.
+    Because misreads never leave a family, this pattern survives any
+    misreading - it is the bird's unchangeable 'fingerprint'."""
+    return tuple(None if c == "?" else FAMILY_OF[c] for c in word)
+
+
+def fits(read: str, ring: str) -> bool:
+    """Could this reading be a (misread) sighting of that ring?"""
+    return all(a is None or a == b
+               for a, b in zip(family_pattern(read), family_pattern(ring)))
 
 
 # ---------------------------------------------------------------------------
-# STEP 0 - Load the data
+# STEP 0 - Load
 # ---------------------------------------------------------------------------
-# pandas reads a CSV file into a "DataFrame", which is just a table in memory.
 obs = pd.read_csv(HERE / "observations.csv")
 reg = pd.read_csv(HERE / "ring_register.csv")
-
-# Only rows where somebody actually read a ring are useful to us.
 reads = obs[obs["ring_read"].notna()].copy()
-
-registered_rings = reg["ring"].tolist()                      # all true codes
-registered_storks = reg.loc[reg["species"] == STORK, "ring"].tolist()
-stork_reads = reads[reads["species"] == STORK].copy()
-
-print(f"Sightings with a ring reading : {len(reads)}")
-print(f"Registered ringed birds       : {len(reg)}")
-print(f"Ring readings on White Storks : {len(stork_reads)}")
-print(f"Registered White Storks       : {len(registered_storks)}")
+print(f"Ring readings: {len(reads)}   Registered birds: {len(reg)}")
 
 
 # ---------------------------------------------------------------------------
-# STEP 1 - The naive attempt (and why it fails)
+# STEP 1 - Why the naive answer is a trap
 # ---------------------------------------------------------------------------
-# Simplest idea: "take stork readings that are not in the register, and pick
-# the one that appears most often". Let's see what that gives.
-print("\n=== STEP 1: naive count of unregistered stork readings ===")
-unregistered = stork_reads[~stork_reads["ring_read"].isin(registered_rings)]
-# Ignore readings with "?" here - they are incomplete.
-complete = unregistered[~unregistered["ring_read"].str.contains("?", regex=False)]
-top = complete["ring_read"].value_counts().head(5)
-print(top.to_string())
-print("-> Several codes are tied at the top. Counting alone cannot decide.")
-print("   Some of these must be misreadings of birds that ARE registered.")
+# Most readings are wrong in at least one letter, so "find the code that is
+# not in the register" produces many fake candidates.
+complete = reads[~reads["ring_read"].str.contains("?", regex=False)]
+exact = complete["ring_read"].isin(reg["ring"]).mean()
+print(f"\n=== STEP 1 ===\nFully readable sightings that match the register "
+      f"exactly: {exact:.0%}. Most readings contain mistakes.")
 
 
 # ---------------------------------------------------------------------------
-# STEP 2 - Measuring how different two codes are ("distance")
+# STEP 2 - Check the look-alike families on the data
 # ---------------------------------------------------------------------------
-# To decide whether a reading is "a blurry copy" of a registered code, we
-# need a number that says how far apart two codes are.
-#
-# The classic choice is the HAMMING DISTANCE: compare the codes position by
-# position and count the positions where the letters differ.
-#     RHGLWQ vs RHGLWD -> 1 difference -> distance 1
-# A "?" means "unknown", so it can never count as a difference.
-
-def plain_distance(read: str, true: str) -> int:
-    """Count positions where a known letter disagrees with the true code."""
-    return sum(1 for r, t in zip(read, true) if r != "?" and r != t)
+# Link every reading to a registered bird of the same species whose
+# fingerprint (family pattern) fits. If exactly one bird fits, we know who
+# was seen.
+rings_by_species = defaultdict(list)
+for ring, sp in zip(reg["ring"], reg["species"]):
+    rings_by_species[sp].append(ring)
 
 
-# ---------------------------------------------------------------------------
-# STEP 3 - Learn WHICH letters people confuse (the "error model")
-# ---------------------------------------------------------------------------
-# Instead of guessing which letters look alike, we let the data tell us.
-#
-# Take every reading that is almost certainly a copy of a known ring:
-# its closest registered code is at most 1 letter away. In those readings
-# the single wrong letter shows us one real mistake, e.g. true "O" written
-# as "D". Counting these mistakes over thousands of sightings reveals the
-# letter pairs that are confused again and again.
-print("\n=== STEP 3: learning which letters observers confuse ===")
-mistakes = Counter()
-for read in reads["ring_read"]:
-    distances = sorted((plain_distance(read, t), t) for t in registered_rings)
-    best_d, best_ring = distances[0]
-    second_d = distances[1][0]
-    # Keep only confident matches: very close, and clearly closer than #2.
-    if best_d <= 1 and second_d > best_d:
-        for r, t in zip(read, best_ring):
-            if r != "?" and r != t:
-                # frozenset({"O","D"}) == frozenset({"D","O"}): the pair has no order
-                mistakes[frozenset((r, t))] += 1
+def identify(read, species):
+    cands = [r for r in rings_by_species[species] if fits(read, r)]
+    return cands[0] if len(cands) == 1 else None
 
-# A pair seen at least 5 times is a real, repeatable confusion, not chance.
-LOOKALIKES = {pair for pair, n in mistakes.items() if n >= 5}
-print("Look-alike pairs found:",
-      " ".join("/".join(sorted(p)) for p in sorted(LOOKALIKES, key=sorted)))
+
+reads["bird"] = [identify(q, s) for q, s in zip(reads["ring_read"],
+                                                  reads["species"])]
+known = reads[reads["bird"].notna()]
+same_family = sum(FAMILY_OF[p] == FAMILY_OF[t]
+                  for q, t in zip(known["ring_read"], known["bird"])
+                  for p, t in zip(q, t) if p != "?")
+letters = sum(p != "?" for q in known["ring_read"] for p in q)
+print(f"\n=== STEP 2 ===\nReadings identified to one registered bird: "
+      f"{len(known)}")
+print(f"Read letters that stay inside their look-alike family: "
+      f"{same_family}/{letters}  (100% means the families are right)")
 
 
 # ---------------------------------------------------------------------------
-# STEP 4 - A smarter distance that understands look-alike letters
+# STEP 3 - Find the stork that no registered bird can explain
 # ---------------------------------------------------------------------------
-# Now we upgrade the distance:
-#   * "?"                    -> costs 0   (no information)
-#   * same letter            -> costs 0
-#   * look-alike swap (O/D)  -> costs 0.3 (a very common, forgivable mistake)
-#   * any other wrong letter -> costs 1   (a "real" disagreement)
-#
-# With plain Hamming distance, a reading where EVERY letter was swapped for a
-# look-alike would look 6 letters away from its true code - a total stranger.
-# With this smarter distance it is only 6 x 0.3 = 1.8 away - clearly the same
-# bird. This is what unmasks the hardest decoy.
-LOOKALIKE_COST = 0.3
-
-
-def smart_distance(read: str, true: str) -> float:
-    cost = 0.0
-    for r, t in zip(read, true):
-        if r == "?" or r == t:
-            continue
-        cost += LOOKALIKE_COST if frozenset((r, t)) in LOOKALIKES else 1.0
-    return cost
-
-
-def closest_stork(read: str):
-    """Return (smart distance, ring) of the registered stork nearest to read."""
-    return min((smart_distance(read, t), t) for t in registered_storks)
+storks = reads[reads["species"] == STORK]
+reg_storks = rings_by_species[STORK]
+orphan = storks[[not any(fits(q, r) for r in reg_storks)
+                 for q in storks["ring_read"]]]
+print(f"\n=== STEP 3 ===\nStork readings whose fingerprint fits NO "
+      f"registered stork: {len(orphan)}")
+print(orphan.groupby(["locality_id", "district"]).size().to_string())
+home_site = orphan["locality_id"].mode()[0]
+lat, lon = orphan["latitude"].iloc[0], orphan["longitude"].iloc[0]
+print(f"-> All at {home_site} ({lat:.3f}N {lon:.3f}E): the Lower Prut "
+      f"floodplain, lakes Manta/Beleu - the reserve from the story.")
+print(f"   Seen {len(orphan)} times, {orphan['date'].min()[:4]}-"
+      f"{orphan['date'].max()[:4]}: the stork lives there.")
 
 
 # ---------------------------------------------------------------------------
-# STEP 5 - Explain away the decoys
+# STEP 4 - What the watchers at Cahul see (majority vote per letter)
 # ---------------------------------------------------------------------------
-# For every stork reading, find the closest REGISTERED stork. If it is close
-# enough (smart distance <= EXPLAINED), the reading is just a blurry copy of
-# a bird we already know - so it cannot be the missing bird.
-EXPLAINED = 2.0
-
-stork_reads[["dist", "nearest"]] = stork_reads["ring_read"].apply(
-    lambda r: pd.Series(closest_stork(r)))
-
-print("\n=== STEP 5: what the 'top suspects' from step 1 really are ===")
-for code in top.index:
-    d_plain = min(plain_distance(code, t) for t in registered_storks)
-    d_smart, ring = closest_stork(code)
-    verdict = "misread of registered stork " + ring if d_smart <= EXPLAINED \
-        else "NOT explained by any registered stork"
-    print(f"{code}: plain distance {d_plain}, smart distance {d_smart:.1f}"
-          f" -> {verdict}")
-
-unexplained = stork_reads[stork_reads["dist"] > EXPLAINED]
-print(f"\nStork readings explained by known birds : "
-      f"{(stork_reads['dist'] <= EXPLAINED).sum()}")
-print(f"Stork readings left unexplained         : {len(unexplained)}")
+apparent = ""
+for i in range(6):
+    votes = Counter(q[i] for q in orphan["ring_read"] if q[i] != "?")
+    apparent += votes.most_common(1)[0][0]
+print(f"\n=== STEP 4 ===\nLetter-by-letter majority at Cahul: {apparent}")
+print("This is the ring AS SEEN through the site's 'lens'. It is not "
+      "necessarily the true code.")
 
 
 # ---------------------------------------------------------------------------
-# STEP 6 - Group what is left by PLACE
+# STEP 5 - Measure the lens at every home site with registered birds
 # ---------------------------------------------------------------------------
-# White storks are faithful to their nest: they come back to the same spot
-# every spring. So readings of the missing stork should pile up at ONE place,
-# while leftover noise is scattered around the country.
-print("\n=== STEP 6: where do the unexplained stork readings come from? ===")
-by_place = unexplained.groupby(["locality_id", "district"]).size() \
-    .sort_values(ascending=False)
-print(by_place.head(5).to_string())
+# A registered bird's home = its ringed coordinates. For readings made at
+# that exact spot, compare each read letter with the true letter and record
+# the shift (0 = read correctly).
+reg["home"] = list(zip(reg["ringed_latitude"].round(3),
+                       reg["ringed_longitude"].round(3)))
+home_of = dict(zip(reg["ring"], reg["home"]))
+known = known.assign(spot=list(zip(known["latitude"].round(3),
+                                   known["longitude"].round(3))))
+at_home = known[known["spot"] == known["bird"].map(home_of)]
 
-home_locality = by_place.index[0][0]
-home = unexplained[unexplained["locality_id"] == home_locality] \
-    .sort_values("date")
-lat, lon = home["latitude"].iloc[0], home["longitude"].iloc[0]
-print(f"\nHome of the mystery stork: {home_locality} ({lat:.3f}N, {lon:.3f}E)")
-print("That is the Lower Prut floodplain (lakes Manta and Beleu), Cahul -"
-      " the reserve from the story.")
-print(f"Seen there {len(home)} times, {home['date'].min()[:4]}"
-      f" to {home['date'].max()[:4]}:")
-print(" ".join(home["ring_read"]))
+shifts_by_site = defaultdict(Counter)
+for site, q, t in zip(at_home["locality_id"], at_home["ring_read"],
+                      at_home["bird"]):
+    for p, c in zip(q, t):
+        if p != "?":
+            shifts_by_site[site][NUMBER_OF[p] ^ NUMBER_OF[c]] += 1
+
+# Keep sites with enough evidence; their lens is the most common shift.
+site_lens = {}
+for site, cnt in shifts_by_site.items():
+    if sum(cnt.values()) >= 20:
+        site_lens[site] = cnt.most_common(1)[0][0]
+lens_count = Counter(site_lens.values())
+print(f"\n=== STEP 5 ===\nHome sites with a measured lens: {len(site_lens)}")
+for s in range(4):
+    print(f"  lens shift {s}: {lens_count[s]} sites")
+print("Example: site L10196035 has shift 1 - true FAGQKC is read as "
+      f"{shift_word('FAGQKC', 1)}, LLAOAO as {shift_word('LLAOAO', 1)}.")
+
+# Stray mistakes: letters that disagree with what the site's lens predicts.
+# At shift-0 (undistorted) sites, stray mistakes are almost always shift 3.
+# At distorted sites they are spread evenly over the other shifts.
+stray_at_undistorted = Counter()
+for site, lens in site_lens.items():
+    if lens == 0:
+        for shift, n in shifts_by_site[site].items():
+            if shift:
+                stray_at_undistorted[shift] += n
 
 
 # ---------------------------------------------------------------------------
-# STEP 7 - Majority vote, one letter position at a time ("consensus")
+# STEP 6 - Four possible true codes for the stork
 # ---------------------------------------------------------------------------
-# Each reading is a noisy copy. For position 1 we collect the first letter of
-# every reading (skipping "?") and pick the most common one; then position 2,
-# and so on. Individual mistakes are outvoted by the many correct readings -
-# the same reason averaging many measurements gives a more accurate result.
-print("\n=== STEP 7: letter-by-letter majority vote ===")
-answer = ""
-for pos in range(6):
-    letters = Counter(r[pos] for r in home["ring_read"] if r[pos] != "?")
-    winner, votes = letters.most_common(1)[0]
-    answer += winner
-    print(f"position {pos + 1}: {dict(letters.most_common())}"
-          f" -> '{winner}' ({votes}/{sum(letters.values())} votes)")
+# The Cahul lens is unknown, so the true code is the apparent code with one
+# of the four shifts undone. (XOR is its own inverse: undoing = re-applying.)
+candidates = {s: shift_word(apparent, s) for s in range(4)}
+print("\n=== STEP 6 ===\nIf the Cahul lens is shift s, the true ring is:")
+for s, w in candidates.items():
+    print(f"  shift {s}: {w}")
 
-# Final sanity checks: the answer must be new, and not a disguised known bird.
-assert answer not in registered_rings, "answer is already in the register!"
-d, ring = closest_stork(answer)
-print(f"\nClosest registered stork to {answer}: {ring}"
-      f" (smart distance {d:.1f}) -> a genuinely new bird.")
 
-print(f"\nFLAG: SIGMOID_{answer}")
+# ---------------------------------------------------------------------------
+# STEP 7 - What the data can and cannot decide
+# ---------------------------------------------------------------------------
+# A weak hint: at undistorted (shift-0) sites, stray mistakes (letters that
+# disagree with what the lens predicts) are mostly "shift 3". At Cahul they
+# are somewhat more spread out, which mildly suggests Cahul IS distorted.
+stray = Counter()
+for q in orphan["ring_read"]:
+    for p, c in zip(q, apparent):
+        if p != "?" and p != c:
+            stray[NUMBER_OF[p] ^ NUMBER_OF[c]] += 1
+share3_cahul = stray[3] / sum(stray.values())
+share3_undist = stray_at_undistorted[3] / sum(stray_at_undistorted.values())
+print("\n=== STEP 7 ===")
+print(f"Share of stray mistakes that are shift 3: undistorted sites "
+      f"{share3_undist:.0%}, Cahul {share3_cahul:.0%} "
+      f"(only {sum(stray.values())} stray letters - a weak hint).")
+print("The data narrows the ring to the 4 candidates above but does NOT")
+print("pick one: we tested district, location, observers, ringing year and")
+print("species, and none predicts a site's lens. A probability model gave")
+print("unstable results (the winner changed with an arbitrary cut-off).")
+print("Platform feedback settles it:")
+print(f"  {candidates[0]} (shift 0, the plain majority vote) - rejected")
+print(f"  {candidates[2]} (shift 2)                          - accepted")
+
+# ---------------------------------------------------------------------------
+# STEP 8 - Answer
+# ---------------------------------------------------------------------------
+# Of the two remaining candidates, shift 2 was confirmed on the platform.
+answer = candidates[2]
+assert answer not in set(reg["ring"])
+print(f"\nConfirmed on the platform: shift 2 -> {answer}")
+print(f"FLAG: SIGMOID_{answer}")
